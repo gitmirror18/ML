@@ -1,0 +1,129 @@
+---
+title: "Assignment - Coursera Practical ML"
+author: "Abhishek Srivastava"
+date: "October 18, 2015"
+output: html_document
+---
+
+#### Step 1 - **Loading the required R packages**
+ 
+```{r message=FALSE}
+  library(caret)
+  library(dplyr)
+  library(rpart)
+  library(e1071)
+  library(randomForest)
+```
+
+#### Step 2- **Reading the data**
+ Read the training and test data from the given csv files in two dataframe
+ 
+```{r}
+set.seed(3523)
+setwd("D:/Users/abhishe6/Desktop/Abhi/ML/Machine")
+training <- read.csv(file="pml-training.csv", header=TRUE, sep=",",na.strings=c("#DIV/0!"," ", "", "NA", "NAs", "NULL"))
+testing <- read.csv(file="pml-testing.csv", header=TRUE, sep=",",na.strings=c("#DIV/0!"," ", "", "NA", "NAs", "NULL"))
+```
+
+#### Step 3- **Cleaning the training data** 
+Training data is cleaned by performing following operations-  
+* Removing the column with large no of NA values.  
+* Removing the column with Zero variance.  
+* A quicklook through dataset reveals that the columnn with name X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window should have no use for the Model building. 
+
+```{r}
+clean_training <- training[,colSums(is.na(training))== 0]
+zerovariance  <- nearZeroVar(clean_training[sapply(clean_training, is.numeric)], saveMetrics=TRUE)
+clean_training <- clean_training[, zerovariance[, 'nzv'] == 0] 
+features_training <- select(clean_training,- X, - user_name, - raw_timestamp_part_1,- raw_timestamp_part_2,
+                              - cvtd_timestamp, - new_window,-  num_window )
+```
+
+
+
+#### Step 4- **Data slicing**
+A 75:25 split for the training and testing set is performed here.
+
+```{r}
+inTrain <- createDataPartition(y=features_training$classe,p=0.75,list=FALSE)
+training <- features_training[inTrain,]
+test <- features_training[-inTrain,]
+```
+
+#### Step 5- **Model building**
+
+##### ***Using rpart***
+  First a rpart Model is built on the training set. 5 fold cross validation is applied to prevent overfitting. 
+```{r}
+rpartModel <- train(classe ~.,data = training,method="rpart",trControl=trainControl(method="cv",number=5),tuneLength=50)
+rpartModel
+```
+  
+##### ***Using random forest***  
+  A random forest model also constructed here which is trained for ntree = 50 and 5 fold cross validation.
+```{r}
+rfModel <- train(classe ~.,data = training,method="rf",trControl=trainControl(method="cv",number=5),ntree=50)
+rfModel
+```
+
+Below plot show importance of different predictors as measured using the values of MeanDecreseGini.
+```{r}
+varImpPlot(rfModel$finalModel) 
+```
+
+Below plot provide the visibility of error against the different values of ntree. 
+```{r}
+plot(rfModel$finalModel)
+```
+
+
+#### Step 6- **Testing the model on sliced test data**   
+ Now testing the accuracy of rpart and random forest model on the test dataset by constructing the confusion matrix.  
+ 
+##### ***Using rpart Model***
+```{r}
+predRpart <- predict(rpartModel,test)
+confRpart <- table(test$classe,predRpart)
+confRpart
+accuracyRpart<- sum(diag(confRpart))/sum(confRpart)
+print(accuracyRpart)
+
+```
+
+##### ***Using Random forest Model***
+```{r}
+predRf <- predict(rfModel,test)
+confRf <- table(test$classe,predRf)
+confRf
+accuracyRf <- sum(diag(confRf))/sum(confRf)
+print(accuracyRf)
+
+```
+Out of sample error for the Random forest model is under 1% which is far better when compared to ~10-11 % out of sample error using rpart. Also Random forest is a better model against any overfitting.
+
+So  I use Random forest model as the final model for prediction.
+
+
+#### Step 7- **Prediction using Model for the Assginment's test cases**
+Here final prediction is done using Random forest model.
+```{r}
+featureset <- colnames(features_training[colSums(is.na(features_training)) == 0])
+
+testCase <- testing[featureset[featureset!='classe']]
+ans <- predict(rfModel, newdata=testCase)
+ans
+```
+#### Step 8- **Generating text files for Prediction**
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(ans)
+
+```
+
